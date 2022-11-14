@@ -35,15 +35,15 @@ local function controlBrakeBias(data)
 
     local brakeBiasBase = car.brakeBias * 100
     local brakeBiasTotal = (brakeBiasBase + ((math.clamp(data.brake-bmigRamp,0,1)/(1-bmigRamp)) * bmig * brakeBiasBase)) * 100
-    -- local bmigcalc = math.round((brakeBiasTotal - brakeBiasBase) / brakeBiasBase * 100,0)
+    -- local bmigCalc = math.round((brakeBiasTotal - brakeBiasBase) / brakeBiasBase * 100,0)
 
-    local frontTorq = datac.wheels[0].brakeTorque + datac.wheels[1].brakeTorque
-    local rearTorq = datac.wheels[2].brakeTorque + datac.wheels[3].brakeTorque
-    local total = frontTorq + rearTorq
-    local brakeBiasActual = frontTorq/total*100
+    local torqFront = datac.wheels[0].brakeTorque + datac.wheels[1].brakeTorque
+    local torqRear = datac.wheels[2].brakeTorque + datac.wheels[3].brakeTorque
+    local torqueTotal = torqFront + torqRear
+    local brakeBiasActual = torqFront/torqueTotal*100
     local bbdiff = brakeBiasTotal-brakeBiasActual
 
-    data.controllerInputs[0] = brakeBiasTotal
+    data.controllerInputs[0] = brakeBiasTotal / 100
     data.controllerInputs[1] = bmig * 100
 end
 
