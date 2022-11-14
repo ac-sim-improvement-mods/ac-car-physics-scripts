@@ -3,9 +3,11 @@ local lastBState = false
 local bmig = 0.03
 local bmigMax = 0.09
 local bmigMin = 0.00
-local ramp = 0.3
+local bmigRamp = 0.30
 
-local function control_brake_bias(data)
+local math = math
+
+local function controlBrakeBias(data)
     local datac = ac.getCarPhysics(car.index)
 
     if lastAState ~= car.extraA then
@@ -26,31 +28,27 @@ local function control_brake_bias(data)
         lastBState = car.extraB
     end
 
-    local set_brake_bias = car.brakeBias
     if car.isAIControlled then
-        --set_brake_bias = 0.5
-        ramp = 0.3
+        bmigRamp = 0.3
         bmig = 0.03
     end
 
+    local brakeBiasBase = car.brakeBias * 100
+    local brakeBiasTotal = (brakeBiasBase + ((math.clamp(data.brake-bmigRamp,0,1)/(1-bmigRamp)) * bmig * brakeBiasBase)) * 100
+    -- local bmigcalc = math.round((brakeBiasTotal - brakeBiasBase) / brakeBiasBase * 100,0)
+
+    local frontTorq = datac.wheels[0].brakeTorque + datac.wheels[1].brakeTorque
+    local rearTorq = datac.wheels[2].brakeTorque + datac.wheels[3].brakeTorque
+    local total = frontTorq + rearTorq
+    local brakeBiasActual = frontTorq/total*100
+    local bbdiff = brakeBiasTotal-brakeBiasActual
+
+    data.controllerInputs[0] = brakeBiasTotal
     data.controllerInputs[1] = bmig * 100
-
-    local total_brake_bias = set_brake_bias + ((math.clamp(data.brake-ramp,0,1)/(1-ramp)) * bmig * set_brake_bias)
-    local bbb = set_brake_bias*100
-    local bbt = total_brake_bias*100
-    local bmigcalc = math.round((bbt - bbb) / bbb * 100,0)
-
-    local front_torq = datac.wheels[0].brakeTorque + datac.wheels[1].brakeTorque
-    local rear_torq = datac.wheels[2].brakeTorque + datac.wheels[3].brakeTorque
-    local total = front_torq + rear_torq
-    local bb_a = front_torq/total*100
-    local bbdiff = bbt-bb_a
-
-    data.controllerInputs[0] = total_brake_bias
 end
 
 function script.update(dt)
     local data = ac.accessCarPhysics()
 
-    control_brake_bias(data)
+    controlBrakeBias(data)
 end
