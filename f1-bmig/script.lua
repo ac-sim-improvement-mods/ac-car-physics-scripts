@@ -8,7 +8,7 @@ local bmigRamp = 0.30
 local math = math
 
 local function controlBrakeBias(data)
-    local datac = ac.getCarPhysics(car.index)
+    local dataCphys = ac.getCarPhysics(car.index)
 
     if lastAState ~= car.extraA then
         if bmig == bmigMax then
@@ -36,9 +36,8 @@ local function controlBrakeBias(data)
     local brakeBiasBase = car.brakeBias * 100
     local brakeBiasTotal = (brakeBiasBase + ((math.clamp(data.brake-bmigRamp,0,1)/(1-bmigRamp)) * bmig * brakeBiasBase)) * 100
     -- local bmigCalc = math.round((brakeBiasTotal - brakeBiasBase) / brakeBiasBase * 100,0)
-
-    local torqFront = datac.wheels[0].brakeTorque + datac.wheels[1].brakeTorque
-    local torqRear = datac.wheels[2].brakeTorque + datac.wheels[3].brakeTorque
+    local torqFront = dataCphys.wheels[0].brakeTorque + dataCphys.wheels[1].brakeTorque
+    local torqRear = dataCphys.wheels[2].brakeTorque + dataCphys.wheels[3].brakeTorque
     local torqueTotal = torqFront + torqRear
     local brakeBiasActual = torqFront/torqueTotal*100
     local bbdiff = brakeBiasTotal-brakeBiasActual
