@@ -22,16 +22,17 @@ end
 
 function differential.control(data,dataCphys)
 
-    if lastEState ~= car.extraC then
+    if lastCState ~= car.extraC then
         if diffMode == DifferentialModes.HISPD then
             diffMode = DifferentialModes.ENTRY
         else
             diffMode = diffMode + 1
         end
-        lastEState = car.extraC
+        lastCState = car.extraC
     end
 
     local diffValue = 0
+    
     if diffMode == DifferentialModes.ENTRY then
         diffValue = entryDiff
     elseif diffMode == DifferentialModes.MID then
@@ -40,23 +41,33 @@ function differential.control(data,dataCphys)
         diffValue = hispdDiff
     end
 
-    if lastCState ~= car.extraD then
+    if lastDState ~= car.extraD then
         if diffValue == 1 then
             diffValue = 0
         else
             diffValue = math.clamp(diffValue+step,0,1)
         end
-        lastCState = car.extraD
+        lastDState = car.extraD
     end
 
-    if lastDState ~= car.extraE then
+    if lastEState ~= car.extraE then
         if diffValue == 0 then
             diffValue = 1
         else
             diffValue = math.clamp(diffValue-step,0,1)
         end
-        lastDState = car.extraE
+        lastEState = car.extraE
     end
+
+    if diffMode == DifferentialModes.ENTRY then
+        entryDiff = diffValue
+    elseif diffMode == DifferentialModes.MID then
+        midDiff = diffValue
+    else
+        hispdDiff = diffValue
+    end
+
+    ac.debug('e',car.extraE)
 
     local exitDiff = 0
     if midDiffSwitch(data) then
@@ -73,8 +84,11 @@ function differential.control(data,dataCphys)
     ac.debug('exitDiff',exitDiff)
     ac.debug('speed',data.speedKmh)
     
-    data.controllerInputs[2] = entryDiff
-    data.controllerInputs[3] = exitDiff
+    data.controllerInputs[2] = exitDiff
+    data.controllerInputs[3] = entryDiff
+    data.controllerInputs[4] = midDiff
+    data.controllerInputs[5] = hispdDiff
+    data.controllerInputs[6] = diffMode
 end
 
 return differential
