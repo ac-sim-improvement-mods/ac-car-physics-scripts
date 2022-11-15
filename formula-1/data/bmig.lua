@@ -8,9 +8,6 @@ local bmigMax = 0.09
 local bmigRamp = 0.30
 
 function brakemigration.control(data,dataCphys)
-    data.brake = 1
-    data.gas = 0
-
     if lastAState ~= car.extraA then
         if bmig == bmigMax then
             bmig = bmigMin
