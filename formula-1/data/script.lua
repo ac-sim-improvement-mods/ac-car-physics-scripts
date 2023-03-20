@@ -1,16 +1,16 @@
 local lastAState = car.extraA
 local lastBState = car.extraB
-local bmig = 0
-local bmigMin = 0
-local bmigMax = 0
-local bmigRamp = 0
+local bmig = 0.03
+local bmigMin = 0.00
+local bmigMax = 0.09
+local bmigRamp = 0.30
 
 local function brakeMigration(data, dataCphys)
 	if lastAState ~= car.extraA then
 		if bmig == bmigMax then
 			bmig = bmigMin
 		else
-			bmig = math.clamp(bmig + 0, bmigMin, bmigMax)
+			bmig = math.clamp(bmig + 0.01, bmigMin, bmigMax)
 		end
 		lastAState = car.extraA
 	end
@@ -18,26 +18,26 @@ local function brakeMigration(data, dataCphys)
 		if bmig == bmigMin then
 			bmig = bmigMax
 		else
-			bmig = math.clamp(bmig - 0, bmigMin, bmigMax)
+			bmig = math.clamp(bmig - 0.01, bmigMin, bmigMax)
 		end
 		lastBState = car.extraB
 	end
 
 	local brakeBiasBase = car.brakeBias
 	local brakeBiasTotal = brakeBiasBase + math.clamp((data.brake - bmigRamp), 0, 1) / (1 - bmigRamp) * bmig
-	local bmigCalc = math.round((brakeBiasTotal - brakeBiasBase) / brakeBiasBase * 100, 0)
 	local torqueFront = dataCphys.wheels[0].brakeTorque + dataCphys.wheels[1].brakeTorque
 	local torqueRear = dataCphys.wheels[2].brakeTorque + dataCphys.wheels[3].brakeTorque
 	local torqueTotal = torqueFront + torqueRear
 	local brakeBiasActual = torqueFront / torqueTotal
 	local bbdiff = brakeBiasTotal - brakeBiasActual
 
-	-- ac.debug("bba", brakeBiasActual)
-	-- ac.debug("bmigCalc", bmigCalc)
-	-- ac.debug("bbdiff", bbdiff)
-	-- ac.debug("bbb", brakeBiasBase)
-	-- ac.debug("bbt", brakeBiasTotal)
-	-- ac.debug("torqueTotal", torqueTotal)
+	-- ac.debug("bmig.bba", brakeBiasActual)
+	-- ac.debug("bmig.bbdiff", bbdiff)
+	-- ac.debug("bmig.bbb", brakeBiasBase)
+	-- ac.debug("bmig.bbt", brakeBiasTotal)
+	-- ac.debug("bmig.torqueTotal", torqueTotal)
+	-- ac.debug("state.a", car.extraA)
+	-- ac.debug("state.b", car.extraB)
 
 	data.controllerInputs[0] = brakeBiasTotal
 	data.controllerInputs[1] = bmig * 100
@@ -54,7 +54,7 @@ local DifferentialModes = {
 }
 
 local diffMode = DifferentialModes.ENTRY
-local step = 5
+local step = 9.090909090909091
 local entryDiff = 5
 local midDiff = 75
 local hispdDiff = 90
@@ -65,7 +65,7 @@ local function hispdDiffSwitch(data)
 	local isHispd = false
 	if longAccel > 0 then
 		isHispd = true
-	elseif groundSpeed > 185 then
+	elseif groundSpeed > 185 or groundSpeed < 1 then
 		isHispd = true
 	end
 	return isHispd
@@ -83,20 +83,14 @@ local function differential(data)
 
 	local diffValue = 0
 	local diffMinValue = 0
-	local diffMaxValue = 1
+	local diffMaxValue = 100
 
 	if diffMode == DifferentialModes.ENTRY then
 		diffValue = entryDiff
-		diffMinValue = 0
-		diffMaxValue = 55
 	elseif diffMode == DifferentialModes.MID then
 		diffValue = midDiff
-		diffMinValue = 45
-		diffMaxValue = 100
 	elseif diffMode == DifferentialModes.HISPD then
 		diffValue = hispdDiff
-		diffMinValue = 45
-		diffMaxValue = 100
 	end
 
 	if lastDState ~= car.extraD then
@@ -123,15 +117,18 @@ local function differential(data)
 		exitDiff = midDiff
 	end
 
-	-- ac.debug("driver", ac.getDriverName(car.index))
-	-- ac.debug("diffMode", diffMode)
-	-- ac.debug("entry", entryDiff)
-	-- ac.debug("mid", midDiff)
-	-- ac.debug("hispd", hispdDiff)
-	-- ac.debug("exit", exitDiff)
-	-- ac.debug("speed", data.speedKmh)
-	-- ac.debug("coast", car.differentialCoast)
-	-- ac.debug("power", car.differentialPower)
+	-- ac.debug("car.driver", ac.getDriverName(car.index))
+	-- ac.debug("script.diff.mode", diffMode)
+	-- ac.debug("script.diff.entry", entryDiff)
+	-- ac.debug("script.diff.mid", midDiff)
+	-- ac.debug("script.diff.hispd", hispdDiff)
+	-- ac.debug("script.diff.exit", exitDiff)
+	-- ac.debug("car.speed", data.speedKmh)
+	-- ac.debug("data.diff.coast", car.differentialCoast)
+	-- ac.debug("data.diff.power", car.differentialPower)
+	-- ac.debug("state.c", car.extraC)
+	-- ac.debug("state.d", car.extraD)
+	-- ac.debug("state.e", car.extraE)
 
 	data.controllerInputs[2] = exitDiff
 	data.controllerInputs[3] = entryDiff
