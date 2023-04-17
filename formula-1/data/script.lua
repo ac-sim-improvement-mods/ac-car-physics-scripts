@@ -1,5 +1,5 @@
 local connection = ac.connect({
-	ac.StructItem.key("ext_car_0"),
+	ac.StructItem.key("ext_car_" .. car.index),
 	brakeBiasBase = ac.StructItem.float(),
 	brakeBiasFine = ac.StructItem.float(),
 	brakeMigration = ac.StructItem.float(),
@@ -15,49 +15,40 @@ local DifferentialModes = {
 	HISPD = 2,
 }
 
--- Stored between sessions
-local stored = ac.storage({
-	bmig = 0.03,
-	diffMode = DifferentialModes.ENTRY,
-	entryDiff = 5,
-	midDiff = 75,
-	hispdDiff = 90,
-})
-
 local lastExtraA = car.extraA
 local lastExtraB = car.extraB
 local lastExtraC = car.extraC
 local lastExtraD = car.extraD
 local lastExtraE = car.extraE
 
-local bmig = stored.bmig
-local bmigMin = 0.00
-local bmigMax = 0.09
-local bmigRamp = 0.30
-local bbFine = 0.00
+local bmig = 4
+local bmigMin = 1
+local bmigMax = 10
+local bmigRamp = 30
+local brakeBiasFine = 0
+local brakeBiasFineMin = 0
+local brakeBiasFineMax = 9
 local brakeBiasBase = car.brakeBias
 
-local function brakeMigration(data, dataCphys)
+local function brakeMigration(data)
 	if bmig ~= connection.brakeMigration then
 		bmig = connection.brakeMigration
 	end
 	if bmigRamp ~= connection.brakeMigrationRamp then
 		bmigRamp = connection.brakeMigrationRamp
 	end
-	if bbFine ~= connection.brakeBiasFine then
-		bbFine = connection.brakeBiasFine
+	if brakeBiasFine ~= connection.brakeBiasFine then
+		brakeBiasFine = connection.brakeBiasFine
 	end
 
 	if lastExtraA ~= car.extraA then
 		if ac.isJoystickButtonPressed(0, 0) then
-			bbFine = math.clamp(bbFine + 0.001, 0, 0.009)
-			print(bbFine)
-			print(car.brakeBias)
+			brakeBiasFine = math.clamp(brakeBiasFine + 1, brakeBiasFineMin, brakeBiasFineMax)
 		else
 			if bmig == bmigMax then
 				bmig = bmigMin
 			else
-				bmig = math.clamp(bmig + 0.01, bmigMin, bmigMax)
+				bmig = math.clamp(bmig + 1, bmigMin, bmigMax)
 			end
 		end
 		lastExtraA = car.extraA
@@ -65,49 +56,49 @@ local function brakeMigration(data, dataCphys)
 
 	if lastExtraB ~= car.extraB then
 		if ac.isJoystickButtonPressed(0, 0) then
-			bbFine = math.clamp(bbFine - 0.001, 0, 0.09)
-			print(bbFine)
-			print(car.brakeBias)
+			brakeBiasFine = math.clamp(brakeBiasFine - 1, brakeBiasFineMin, brakeBiasFineMax)
 		else
 			if bmig == bmigMin then
 				bmig = bmigMax
 			else
-				bmig = math.clamp(bmig - 0.01, bmigMin, bmigMax)
+				bmig = math.clamp(bmig - 1, bmigMin, bmigMax)
 			end
 		end
 		lastExtraB = car.extraB
 	end
 
-	brakeBiasBase = car.brakeBias + bbFine
+	brakeBiasBase = car.brakeBias + (brakeBiasFine / 1000)
 
-	local brakeBiasTotal = brakeBiasBase + math.clamp((data.brake - bmigRamp), 0, 1) / (1 - bmigRamp) * bmig
+	local brakeBiasTotal = brakeBiasBase
+		+ math.clamp((data.brake - (bmigRamp / 100)), 0, 1) / (1 - (bmigRamp / 100)) * ((bmig - 1) / 100)
 	-- local torqueFront = dataCphys.wheels[0].brakeTorque + dataCphys.wheels[1].brakeTorque
 	-- local torqueRear = dataCphys.wheels[2].brakeTorque + dataCphys.wheels[3].brakeTorque
 	-- local torqueTotal = torqueFront + torqueRear
 	-- local brakeBiasActual = torqueFront / torqueTotal
 	-- local bbdiff = brakeBiasTotal - brakeBiasActual
 
-	stored.bmig = bmig
-	-- connection.brakeMigration = bmig
-	-- connection.brakeBiasBase = brakeBiasBase
-	-- connection.brakeBiasFine = bbFine
-	data.controllerInputs[0] = brakeBiasTotal
-	data.controllerInputs[1] = bmig
-
-	-- ac.debug("bmig.bba", brakeBiasActual)
-	-- ac.debug("bmig.bbdiff", bbdiff)
-	-- ac.debug("bmig.bbb", brakeBiasBase)
-	-- ac.debug("bmig.bbt", brakeBiasTotal)
-	-- ac.debug("bmig.torqueTotal", torqueTotal)
+	-- ac.debug("bb.bba", brakeBiasActual)
+	-- ac.debug("bb.bbdiff", bbdiff)
+	-- ac.debug("bb.base", math.round(brakeBiasBase * 100, 1))
+	-- ac.debug("bb.fine", brakeBiasFine)
+	-- ac.debug("bb.total", math.round(brakeBiasTotal * 100, 1))
+	-- ac.debug("bb.mig", bmig)
+	-- ac.debug("bb.mig.ramp", bmigRamp)
+	-- -- ac.debug("bb.torqueTotal", torqueTotal)
 	-- ac.debug("state.a", car.extraA)
 	-- ac.debug("state.b", car.extraB)
+
+	connection.brakeMigration = bmig
+	connection.brakeBiasBase = brakeBiasBase
+	connection.brakeBiasFine = brakeBiasFine
+	data.controllerInputs[0] = brakeBiasTotal
+	data.controllerInputs[1] = bmig
 end
 
-local step = 9.090909090909091
-local diffMode = stored.diffMode
-local entryDiff = stored.entryDiff
-local midDiff = stored.midDiff
-local hispdDiff = stored.hispdDiff
+local diffMode = DifferentialModes.ENTRY
+local entryDiff = 1
+local midDiff = 4
+local hispdDiff = 5
 
 local function hispdDiffSwitch(data)
 	local groundSpeed = car.speedKmh
@@ -141,9 +132,9 @@ local function differential(data)
 		lastExtraC = car.extraC
 	end
 
-	local diffValue = 0
-	local diffMinValue = 0
-	local diffMaxValue = 100
+	local diffValue = 1
+	local diffMinValue = 1
+	local diffMaxValue = 12
 
 	if diffMode == DifferentialModes.ENTRY then
 		diffValue = entryDiff
@@ -154,11 +145,11 @@ local function differential(data)
 	end
 
 	if lastExtraD ~= car.extraD then
-		diffValue = math.clamp(diffValue + step, diffMinValue, diffMaxValue)
+		diffValue = math.clamp(diffValue + 1, diffMinValue, diffMaxValue)
 		lastExtraD = car.extraD
 	end
 	if lastExtraE ~= car.extraE then
-		diffValue = math.clamp(diffValue - step, diffMinValue, diffMaxValue)
+		diffValue = math.clamp(diffValue - 1, diffMinValue, diffMaxValue)
 		lastExtraE = car.extraE
 	end
 
@@ -172,17 +163,8 @@ local function differential(data)
 
 	local exitDiff = hispdDiffSwitch(data) and hispdDiff or midDiff
 
-	stored.entryDiff = entryDiff
-	stored.midDiff = midDiff
-	stored.hispdDiff = hispdDiff
-	stored.diffMode = diffMode
-	data.controllerInputs[2] = exitDiff
-	data.controllerInputs[3] = entryDiff
-	data.controllerInputs[4] = midDiff
-	data.controllerInputs[5] = hispdDiff
-	data.controllerInputs[6] = diffMode
-
-	-- ac.debug("car.driver", ac.getDriverName(car.index))
+	-- ac.debug("_car.driver", ac.getDriverName(car.index))
+	-- ac.debug("_car.index", car.index)
 	-- ac.debug("script.diff.mode", diffMode)
 	-- ac.debug("script.diff.entry", entryDiff)
 	-- ac.debug("script.diff.mid", midDiff)
@@ -195,6 +177,15 @@ local function differential(data)
 	-- ac.debug("state.c", car.extraC)
 	-- ac.debug("state.d", car.extraD)
 	-- ac.debug("state.e", car.extraE)
+
+	connection.diffEntry = entryDiff
+	connection.diffMid = midDiff
+	connection.diffHispd = hispdDiff
+	data.controllerInputs[2] = exitDiff
+	data.controllerInputs[3] = entryDiff
+	data.controllerInputs[4] = midDiff
+	data.controllerInputs[5] = hispdDiff
+	data.controllerInputs[6] = diffMode
 end
 
 local function car_launch(data, launch)
@@ -208,12 +199,24 @@ local function car_launch(data, launch)
 	end
 end
 
+local function resetExtraStates()
+	lastExtraA = false
+	lastExtraB = false
+	lastExtraC = false
+	lastExtraD = false
+	lastExtraE = false
+end
+
 function script.update(dt)
 	local data = ac.accessCarPhysics()
-	local dataCphys = ac.getCarPhysics(car.index)
+	-- local dataCphys = ac.getCarPhysics(car.index)
 	local sim = ac.getSim()
 
-	brakeMigration(data, dataCphys)
+	if sim.isInMainMenu then
+		resetExtraStates()
+	end
+
+	brakeMigration(data)
 	differential(data)
 
 	if sim.timeToSessionStart > -3000 and sim.timeToSessionStart < 3000 and car.isAIControlled then
