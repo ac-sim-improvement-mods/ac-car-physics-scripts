@@ -1,13 +1,17 @@
 local connection = ac.connect({
-	ac.StructItem.key("ext_car_" .. car.index),
+	ac.StructItem.key(ac.getCarID .. "_ext_physics_" .. car.index),
 	brakeBiasBase = ac.StructItem.float(),
 	brakeBiasFine = ac.StructItem.float(),
 	brakeMigration = ac.StructItem.float(),
 	brakeMigrationRamp = ac.StructItem.float(),
-	diffEntry = ac.StructItem.float(),
-	diffMid = ac.StructItem.float(),
-	diffHispd = ac.StructItem.float(),
+	differentialMode = ac.StructItem. float(),
+	differentialEntry = ac.StructItem.float(),
+	differrentialMid = ac.StructItem.float(),
+	differentialExitHispd = ac.StructItem.float(),
 }, true, ac.SharedNamespace.CarScript)
+
+local data = ac.accessPhysics()
+local sim = ac.getSim()
 
 local DifferentialModes = {
 	ENTRY = 0,
@@ -15,15 +19,17 @@ local DifferentialModes = {
 	HISPD = 2,
 }
 
-local lastExtraA = car.extraA
-local lastExtraB = car.extraB
-local lastExtraC = car.extraC
-local lastExtraD = car.extraD
-local lastExtraE = car.extraE
+local extra = {
+	A = car.extraA
+	B = car.extraB
+	C = car.extraC
+	D = car.extraD
+	E = car.extraE
+}
 
 local bmig = 4
-local bmigMin = 1
-local bmigMax = 10
+local bmigMin = 0
+local bmigMax = 9
 local bmigRamp = 30
 local brakeBiasFine = 0
 local brakeBiasFineMin = 0
@@ -69,8 +75,12 @@ local function brakeMigration(data)
 
 	brakeBiasBase = car.brakeBias + (brakeBiasFine / 1000)
 
-	local brakeBiasTotal = brakeBiasBase
-		+ math.clamp((data.brake - (bmigRamp / 100)), 0, 1) / (1 - (bmigRamp / 100)) * ((bmig - 1) / 100)
+	local brakeBiasTotal = brakeBiasBase + math.clamp((data.brake - (bmigRamp / 100)), 0, 1) / (1 - (bmigRamp / 100)) * ((bmig - 1) / 100)
+	
+	local brakeBiasTotal = brakeBiasBase + (data.brake - bmigRamp / 100) / (1 - bmigRamp / 100) * (bmig / 100 - 1)
+	
+	local brakeBiasTotal = brakeBiasBase + (data.brake - bmigRamp) * (bmig / 100 - 1) / (100 - bmigRamp)
+
 	-- local torqueFront = dataCphys.wheels[0].brakeTorque + dataCphys.wheels[1].brakeTorque
 	-- local torqueRear = dataCphys.wheels[2].brakeTorque + dataCphys.wheels[3].brakeTorque
 	-- local torqueTotal = torqueFront + torqueRear
@@ -92,7 +102,6 @@ local function brakeMigration(data)
 	connection.brakeBiasBase = brakeBiasBase
 	connection.brakeBiasFine = brakeBiasFine
 	data.controllerInputs[0] = brakeBiasTotal
-	data.controllerInputs[1] = bmig
 end
 
 local diffMode = DifferentialModes.ENTRY
@@ -161,7 +170,7 @@ local function differential(data)
 		hispdDiff = diffValue
 	end
 
-	local exitDiff = hispdDiffSwitch(data) and hispdDiff or midDiff
+	local differentialPower = hispdDiffSwitch(data) and hispdDiff or midDiff
 
 	-- ac.debug("_car.driver", ac.getDriverName(car.index))
 	-- ac.debug("_car.index", car.index)
@@ -178,48 +187,43 @@ local function differential(data)
 	-- ac.debug("state.d", car.extraD)
 	-- ac.debug("state.e", car.extraE)
 
-	connection.diffEntry = entryDiff
-	connection.diffMid = midDiff
-	connection.diffHispd = hispdDiff
-	data.controllerInputs[2] = exitDiff
-	data.controllerInputs[3] = entryDiff
-	data.controllerInputs[4] = midDiff
-	data.controllerInputs[5] = hispdDiff
-	data.controllerInputs[6] = diffMode
-end
+	connection.differentialMode = diffMode
+	connection.differentialEntry = entryDiff
+	connection.differentialMid = midDiff
+	connection.differentialExitHispd = hispdDiff
 
-local function car_launch(data, launch)
-	local rear_slip = data.wheels[2].ndSlip + data.wheels[3].ndSlip / 2
-	if launch then
-		data.gas = math.clamp(1 / math.clamp((rear_slip - 0.5), 1, 4), 0, 1)
-		data.steer = math.clamp(data.steer, -0.05, 0.05)
-	else
-		car.gear = 2
-		data.gas = math.clamp(1 / (rear_slip * 2), 0, 0.5)
-	end
+	data.controllerInputs[2] = entryDiff
+	data.controllerInputs[3] = differentialPower
 end
 
 local function resetExtraStates()
-	lastExtraA = false
-	lastExtraB = false
-	lastExtraC = false
-	lastExtraD = false
-	lastExtraE = false
+	extra.A = false
+	extra.B = false
+	extra.C = false
+	extra.D = false
+	extra.E = false
+end
+
+local EBB = function()
+	
+
+return function()
+
+
+end
+
+local DIFF = function()
+
+return function()
+
+
 end
 
 function script.update(dt)
-	local data = ac.accessCarPhysics()
-	-- local dataCphys = ac.getCarPhysics(car.index)
-	local sim = ac.getSim()
-
 	if sim.isInMainMenu then
 		resetExtraStates()
 	end
 
 	brakeMigration(data)
 	differential(data)
-
-	if sim.timeToSessionStart > -3000 and sim.timeToSessionStart < 3000 and car.isAIControlled then
-		car_launch(data, true)
-	end
 end
