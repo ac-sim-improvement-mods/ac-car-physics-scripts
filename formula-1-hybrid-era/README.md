@@ -1,7 +1,7 @@
 # Formula 1 Car Physics
 ## Brake Migration
 Brake migration is an adjustable setting that allows the brake bias to shift rearwards as the driver releases the brake pedal.  
-While the car is traveling at highspeeds and has a high load of downforce on the front wing, a higher front brake bias percentage will help decelerate the car quicker. However, a high front brake bias percentage will also lead to locking the front tyres up as the car loses speed/frontal downforce. Brake migration allows for the inital braking phase to utilize a higher brake bias percentage, then as the driver bleeds off the brake pedal, shift the brake bias rearwards to prevent front tyre lockups and aid in car rotation.
+While the car is traveling at high speeds and has a high load of downforce on the front wing, a higher front brake bias percentage will help decelerate the car quicker. However, a high front brake bias percentage will also lead to locking the front tyres up as the car loses speed/frontal downforce. Brake migration allows for the inital braking phase to utilize a higher brake bias percentage, then as the driver bleeds off the brake pedal, shift the brake bias rearwards to prevent front tyre lockups and aid in car rotation.
 
 The equation below represents the total brake bias. Total brake bias is calculated by adding the base brake bias to the product of the ratio of brake pedal percentage and ramp level multiplied by the brake migration percentage.
 
