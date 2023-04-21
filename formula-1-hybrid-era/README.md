@@ -41,6 +41,9 @@ Brake_Pedal = 50%
 Total_Brake_Bias = 58.0%  
 ```
 
+#### External references to help understand Brake Migration
+- Video: [Mercedes engineer quickly explaining BMIG](https://youtu.be/ODaPkCehkkA?t=211)
+
 ## Differential Settings
 Differential adjustment allows for the driver to change the differential lock percentage for the three phases of a corner. Entry, Middle, and Exit/Highspeed. High speed corners share the Exit differential setting. 
 
@@ -57,3 +60,9 @@ Differential = 12/12
 This represents a completely closed differential.
 Provides least stability and most acceleration/rotation.
 ```
+
+#### External references to help understand Differential Settings
+- Video: [Chain Bear Differential video](https://www.youtube.com/watch?v=jbPZauD4DQM)  
+- Video: [Daniel Riccardo Onboard Settings Adjustment](https://www.youtube.com/watch?v=UW6f7CkQ90U)  
+- Video: [WTF1 Short Differential Explaination](https://youtu.be/JbqEtApATZg?t=242)
+- Webpage: [Technical F1 Dictionary Differential](https://www.formula1-dictionary.net/differential.html)
