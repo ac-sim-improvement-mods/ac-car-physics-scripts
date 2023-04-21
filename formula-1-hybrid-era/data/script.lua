@@ -1,5 +1,6 @@
 local ext_car = ac.connect({
 	ac.StructItem.key(ac.getCarID(car.index) .. "_ext_car_" .. car.index),
+	connected = ac.StructItem.boolean(),
 	brakeBiasBase = ac.StructItem.float(),
 	brakeBiasFine = ac.StructItem.float(),
 	brakeMigration = ac.StructItem.float(),
@@ -13,7 +14,9 @@ local ext_car = ac.connect({
 
 local sim = ac.getSim()
 local data = ac.accessCarPhysics()
+ext_car.connected = true
 
+-- Setup ID to section key map logic from Ilja
 local setupINI = ac.INIConfig.carData(car.index, "setup.ini")
 local setupIDToSectionKeyMap = {}
 for k, v in pairs(setupINI.sections) do
@@ -64,7 +67,7 @@ local sectionToMessage = {
 	DIFF_EXIT_HISPD = "Differential EXIT/HISPD",
 }
 
-local function setupItemStepper(section, value, min, max, step, stepDownExtra, stepUpExtra)
+local function setupItemStepper(section, lut, value, min, max, step, stepDownExtra, stepUpExtra)
 	local updated = false
 
 	if stepUpExtra ~= "" and last[stepUpExtra] ~= car[stepUpExtra] then
@@ -100,7 +103,7 @@ local function setupItemStepper(section, value, min, max, step, stepDownExtra, s
 		if section == "DIFF_MODE" then
 			ac.setSystemMessage("Differential Mode: " .. diffModeToString(value))
 		else
-			ac.setSystemMessage(tostring(sectionToMessage[section]) .. ": " .. value + 1)
+			ac.setSystemMessage(tostring(sectionToMessage[section]) .. ": " .. lut[value + 1])
 		end
 	end
 
@@ -116,12 +119,26 @@ local EBB = function()
 	local brakeMigrationRampItem = ac.getScriptSetupValue(brakeMigrationRampSection) or refnumber(0)
 
 	local brakeMigrationLut = setupINI:get(setupIDToSectionKeyMap[brakeMigrationSection], "LUT", "")
+	local brakeMigrationLutLabels = {}
 	local brakeMigrationLutValues = {}
+
+	-- Data lut mapping logic from Ilja
 	if #brakeMigrationLut > 0 then
 		local lut = ac.readDataFile(
 			ac.getFolder(ac.FolderID.ContentCars) .. "/" .. ac.getCarID(car.index) .. "/data/" .. brakeMigrationLut
 		)
 		if lut and #lut > 0 then
+			brakeMigrationLutLabels = table.map(
+				table.map(lut:split("\n"), function(x)
+					return x:split("|", 2, true)
+				end),
+				function(x)
+					if #x ~= 2 then
+						return
+					end
+					return x[1], tostring(x[2]) + 1
+				end
+			)
 			brakeMigrationLutValues = table.map(
 				table.map(lut:split("\n"), function(x)
 					return x:split("|", 2, true)
@@ -154,6 +171,7 @@ local EBB = function()
 
 		setupItemStepper(
 			brakeMigrationSection,
+			brakeMigrationLutLabels,
 			brakeMigration,
 			brakeMigrationMin,
 			brakeMigrationMax,
@@ -163,15 +181,15 @@ local EBB = function()
 		)
 
 		-- stylua: ignore start
-		ac.debug("ebb.base", tostring(math.round(brakeBiasBase * 100, 1)) .. "%")
-		ac.debug("ebb.fine", tostring(brakeBiasFine/10) .. "%")
-		ac.debug("ebb.total", tostring(math.round(brakeBiasTotal * 100, 1)) .. "%")
-		ac.debug("ebb.mig", tostring(brakeMigration) .. "%")
-		ac.debug("ebb.mig.ramp", tostring(brakeMigrationRamp) .. "%")
-		ac.debug("ebb.mig.applied", tostring(math.round(math.clamp((brakePedal - brakeMigrationRamp / 100), 0, 1) / (1 - brakeMigrationRamp / 100),3) * 100) .. "%")
-		ac.debug("ebb.brake.pedal", tostring(math.round(data.brake * 100, 1)) .. "%")
-		ac.debug("extraA", car.extraA)
-		ac.debug("extraB", car.extraB)
+		-- ac.debug("ebb.base", tostring(math.round(brakeBiasBase * 100, 1)) .. "%")
+		-- ac.debug("ebb.fine", tostring(brakeBiasFine/10) .. "%")
+		-- ac.debug("ebb.total", tostring(math.round(brakeBiasTotal * 100, 1)) .. "%")
+		-- ac.debug("ebb.mig", tostring(brakeMigration) .. "%")
+		-- ac.debug("ebb.mig.ramp", tostring(brakeMigrationRamp) .. "%")
+		-- ac.debug("ebb.mig.applied", tostring(math.round(math.clamp((brakePedal - brakeMigrationRamp / 100), 0, 1) / (1 - brakeMigrationRamp / 100),3) * 100) .. "%")
+		-- ac.debug("ebb.brake.pedal", tostring(math.round(data.brake * 100, 1)) .. "%")
+		-- ac.debug("extraA", car.extraA)
+		-- ac.debug("extraB", car.extraB)
 		-- stylua: ignore end
 
 		ext_car.brakeBiasBase = brakeBiasBase
@@ -203,12 +221,26 @@ local DIFF = function()
 	local diffMidHispdSwitchItem = ac.getScriptSetupValue(diffMidHispdSwitchSection) or refnumber(0)
 
 	local diffLut = setupINI:get(setupIDToSectionKeyMap[diffEntrySection], "LUT", "")
+	local diffLutLables = {}
 	local diffLutValues = {}
+
+	-- Data lut mapping logic from Ilja
 	if #diffLut > 0 then
 		local lut = ac.readDataFile(
 			ac.getFolder(ac.FolderID.ContentCars) .. "/" .. ac.getCarID(car.index) .. "/data/" .. diffLut
 		)
 		if lut and #lut > 0 then
+			diffLutLables = table.map(
+				table.map(lut:split("\n"), function(x)
+					return x:split("|", 2, true)
+				end),
+				function(x)
+					if #x ~= 2 then
+						return
+					end
+					return x[1], tostring(x[2]) + 1
+				end
+			)
 			diffLutValues = table.map(
 				table.map(lut:split("\n"), function(x)
 					return x:split("|", 2, true)
@@ -234,7 +266,7 @@ local DIFF = function()
 		local diffMidHispdSwitch = diffMidHispdSwitchItem()
 		local diffSection, diffValue
 
-		diffModeCurrent = setupItemStepper("DIFF_MODE", diffModeCurrent, 0, 2, 1, "", "extraC")
+		diffModeCurrent = setupItemStepper("DIFF_MODE", nil, diffModeCurrent, 0, 2, 1, "", "extraC")
 
 		if diffModeCurrent == diffMode.ENTRY then
 			diffSection = diffEntrySection
@@ -247,7 +279,7 @@ local DIFF = function()
 			diffValue = diffExitHispd
 		end
 
-		setupItemStepper(diffSection, diffValue, diffMin, diffMax, diffStep, "extraE", "extraD")
+		setupItemStepper(diffSection, diffLutLables, diffValue, diffMin, diffMax, diffStep, "extraE", "extraD")
 
 		local diffCoast = diffEntry
 		local diffPower = isHispdSwitch(diffMidHispdSwitch) and diffExitHispd or diffMid
@@ -255,7 +287,7 @@ local DIFF = function()
 		ac.debug("car.driver", ac.getDriverName(car.index))
 		ac.debug("car.index", car.index)
 		ac.debug("car.accel.z", car.acceleration.z)
-		ac.debug("car.speed", math.round(data.speedKmh))
+		ac.debug("car.speed", math.round(data.speedKmh, 2))
 		ac.debug("diff.mode", diffModeCurrent)
 		ac.debug("diff.entry", diffEntry)
 		ac.debug("diff.mid", diffMid)
@@ -265,6 +297,8 @@ local DIFF = function()
 		ac.debug("diff.step.max", diffMax)
 		ac.debug("diff.midHispdSwitch", diffMidHispdSwitch)
 		ac.debug("diff.midHispdSwitchActive", isHispdSwitch(diffMidHispdSwitch))
+		ac.debug("diff.data.controller.coast", math.round(ac.getDynamicController("ctrl_diff_coast.ini")(), 1))
+		ac.debug("diff.data.controller.power", math.round(ac.getDynamicController("ctrl_diff_power.ini")(), 1))
 		-- ac.debug("diff.data.coast", math.round(car.differentialCoast * 100, 1))
 		-- ac.debug("diff.data.power", math.round(car.differentialPower * 100, 1))
 		-- ac.debug("diff.data.preload", car.differentialPreload)
