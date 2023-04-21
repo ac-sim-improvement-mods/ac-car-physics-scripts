@@ -1,6 +1,7 @@
 # Formula 1 Car Physics
 ## Brake Migration
-Brake migration is the shifting of brake bias rearwards as the driver releases the brake pedal. This shift allows the car to initally have a higher front brake bias percentage, which provides greater stopping power, then shifts the bias rearwards to prevent the front tyres from getting locked up.  
+Brake migration is the shifting of brake bias rearwards as the driver releases the brake pedal.  
+While the car is traveling at highspeeds and has a high load of downforce on the front wing, a higher front brake bias percentage will help decelerate the car quicker. However, a high front brake bias percentage will also lead to locking the front tyres up as the car loses speed/frontal downforce. Brake migration allows for the inital braking phase to utilize a higher brake bias percentage, then as the driver bleeds off the brake pedal, shift the brake bias rearwards to prevent front tyre lockups and aid in car rotation.
 
 The equation below represents the total brake bias. Total brake bias is calculated by adding the base brake bias to the product of the ratio of brake pedal percentage and ramp level multiplied by the brake migration percentage.
 
@@ -45,7 +46,7 @@ Total_Brake_Bias = 58.0%
 - Video: [Mercedes engineer quickly explaining BMIG](https://youtu.be/ODaPkCehkkA?t=211)
 
 ## Differential Settings
-Differential adjustment allows for the driver to change the differential lock percentage for the three phases of a corner. Entry, Middle, and Exit/Highspeed. High speed corners share the Exit differential setting. 
+Differential adjustment allows for the driver to change the differential lock percentage for the three phases of a corner; Entry, Middle, and Exit/Highspeed. High speed corners and corner Exit share the same differential setting. 
 
 Higher differential setting = more differential locking.  
 
