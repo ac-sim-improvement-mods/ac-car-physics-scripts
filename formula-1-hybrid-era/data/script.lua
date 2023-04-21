@@ -1,229 +1,295 @@
-local connection = ac.connect({
-	ac.StructItem.key(ac.getCarID .. "_ext_physics_" .. car.index),
+local ext_car = ac.connect({
+	ac.StructItem.key(ac.getCarID(car.index) .. "_ext_car_" .. car.index),
 	brakeBiasBase = ac.StructItem.float(),
 	brakeBiasFine = ac.StructItem.float(),
 	brakeMigration = ac.StructItem.float(),
 	brakeMigrationRamp = ac.StructItem.float(),
-	differentialMode = ac.StructItem. float(),
-	differentialEntry = ac.StructItem.float(),
-	differrentialMid = ac.StructItem.float(),
-	differentialExitHispd = ac.StructItem.float(),
+	diffModeCurrent = ac.StructItem.float(),
+	diffEntry = ac.StructItem.float(),
+	diffMid = ac.StructItem.float(),
+	diffExitHispd = ac.StructItem.float(),
+	diffMidHispdSwitch = ac.StructItem.boolean(),
 }, true, ac.SharedNamespace.CarScript)
 
-local data = ac.accessPhysics()
 local sim = ac.getSim()
+local data = ac.accessCarPhysics()
 
-local DifferentialModes = {
-	ENTRY = 0,
-	MID = 1,
-	HISPD = 2,
-}
-
-local extra = {
-	A = car.extraA
-	B = car.extraB
-	C = car.extraC
-	D = car.extraD
-	E = car.extraE
-}
-
-local bmig = 4
-local bmigMin = 0
-local bmigMax = 9
-local bmigRamp = 30
-local brakeBiasFine = 0
-local brakeBiasFineMin = 0
-local brakeBiasFineMax = 9
-local brakeBiasBase = car.brakeBias
-
-local function brakeMigration(data)
-	if bmig ~= connection.brakeMigration then
-		bmig = connection.brakeMigration
+local setupINI = ac.INIConfig.carData(car.index, "setup.ini")
+local setupIDToSectionKeyMap = {}
+for k, v in pairs(setupINI.sections) do
+	if string.startsWith(k, "CUSTOM_SCRIPT_ITEM_") and v["ID"] then
+		setupIDToSectionKeyMap[v["ID"][1]] = k
 	end
-	if bmigRamp ~= connection.brakeMigrationRamp then
-		bmigRamp = connection.brakeMigrationRamp
-	end
-	if brakeBiasFine ~= connection.brakeBiasFine then
-		brakeBiasFine = connection.brakeBiasFine
-	end
-
-	if lastExtraA ~= car.extraA then
-		if ac.isJoystickButtonPressed(0, 0) then
-			brakeBiasFine = math.clamp(brakeBiasFine + 1, brakeBiasFineMin, brakeBiasFineMax)
-		else
-			if bmig == bmigMax then
-				bmig = bmigMin
-			else
-				bmig = math.clamp(bmig + 1, bmigMin, bmigMax)
-			end
-		end
-		lastExtraA = car.extraA
-	end
-
-	if lastExtraB ~= car.extraB then
-		if ac.isJoystickButtonPressed(0, 0) then
-			brakeBiasFine = math.clamp(brakeBiasFine - 1, brakeBiasFineMin, brakeBiasFineMax)
-		else
-			if bmig == bmigMin then
-				bmig = bmigMax
-			else
-				bmig = math.clamp(bmig - 1, bmigMin, bmigMax)
-			end
-		end
-		lastExtraB = car.extraB
-	end
-
-	brakeBiasBase = car.brakeBias + (brakeBiasFine / 1000)
-
-	local brakeBiasTotal = brakeBiasBase + math.clamp((data.brake - (bmigRamp / 100)), 0, 1) / (1 - (bmigRamp / 100)) * ((bmig - 1) / 100)
-	
-	local brakeBiasTotal = brakeBiasBase + (data.brake - bmigRamp / 100) / (1 - bmigRamp / 100) * (bmig / 100 - 1)
-	
-	local brakeBiasTotal = brakeBiasBase + (data.brake - bmigRamp) * (bmig / 100 - 1) / (100 - bmigRamp)
-
-	-- local torqueFront = dataCphys.wheels[0].brakeTorque + dataCphys.wheels[1].brakeTorque
-	-- local torqueRear = dataCphys.wheels[2].brakeTorque + dataCphys.wheels[3].brakeTorque
-	-- local torqueTotal = torqueFront + torqueRear
-	-- local brakeBiasActual = torqueFront / torqueTotal
-	-- local bbdiff = brakeBiasTotal - brakeBiasActual
-
-	-- ac.debug("bb.bba", brakeBiasActual)
-	-- ac.debug("bb.bbdiff", bbdiff)
-	-- ac.debug("bb.base", math.round(brakeBiasBase * 100, 1))
-	-- ac.debug("bb.fine", brakeBiasFine)
-	-- ac.debug("bb.total", math.round(brakeBiasTotal * 100, 1))
-	-- ac.debug("bb.mig", bmig)
-	-- ac.debug("bb.mig.ramp", bmigRamp)
-	-- -- ac.debug("bb.torqueTotal", torqueTotal)
-	-- ac.debug("state.a", car.extraA)
-	-- ac.debug("state.b", car.extraB)
-
-	connection.brakeMigration = bmig
-	connection.brakeBiasBase = brakeBiasBase
-	connection.brakeBiasFine = brakeBiasFine
-	data.controllerInputs[0] = brakeBiasTotal
 end
 
-local diffMode = DifferentialModes.ENTRY
-local entryDiff = 1
-local midDiff = 4
-local hispdDiff = 5
+setupINI:iterate("CUSTOM_SCRIPT_ITEM")
 
-local function hispdDiffSwitch(data)
-	local groundSpeed = car.speedKmh
+local last = {
+	extraA = car.extraA,
+	extraB = car.extraB,
+	extraC = car.extraC,
+	extraD = car.extraD,
+	extraE = car.extraE,
+}
+
+local function resetExtraStates()
+	last.extraA = false
+	last.extraB = false
+	last.extraC = false
+	last.extraD = false
+	last.extraE = false
+end
+
+local diffMode = {
+	ENTRY = 0,
+	MID = 1,
+	EXIT_HISPD = 2,
+}
+
+local diffModeToString = function(mode)
+	local diffModeStrings = {
+		"ENTRY",
+		"MID",
+		"EXIT/HISPD",
+	}
+	return diffModeStrings[mode + 1]
+end
+
+local diffModeCurrent = diffMode.ENTRY
+
+local sectionToMessage = {
+	BRAKE_MIGRATION = "Brake Migration",
+	DIFF_ENTRY = "Differential ENTRY",
+	DIFF_MID = "Differential MID",
+	DIFF_EXIT_HISPD = "Differential EXIT/HISPD",
+}
+
+local function setupItemStepper(section, value, min, max, step, stepDownExtra, stepUpExtra)
+	local updated = false
+
+	if stepUpExtra ~= "" and last[stepUpExtra] ~= car[stepUpExtra] then
+		last[stepUpExtra] = car[stepUpExtra]
+		if value == max then
+			value = min
+		else
+			value = math.clamp(value + step, min, max)
+		end
+
+		if section ~= "DIFF_MODE" then
+			ac.setScriptSetupValue(section, value)
+		end
+		updated = true
+	end
+
+	if stepDownExtra ~= "" and last[stepDownExtra] ~= car[stepDownExtra] then
+		last[stepDownExtra] = car[stepDownExtra]
+
+		if value == min then
+			value = max
+		else
+			value = math.clamp(value - step, min, max)
+		end
+
+		if section ~= "DIFF_MODE" then
+			ac.setScriptSetupValue(section, value)
+		end
+		updated = true
+	end
+
+	if updated then
+		if section == "DIFF_MODE" then
+			ac.setSystemMessage("Differential Mode: " .. diffModeToString(value))
+		else
+			ac.setSystemMessage(tostring(sectionToMessage[section]) .. ": " .. value + 1)
+		end
+	end
+
+	return value
+end
+
+local EBB = function()
+	local brakeBiasFineSection = "BRAKE_BIAS_FINE"
+	local brakeBiasFineItem = ac.getScriptSetupValue(brakeBiasFineSection) or refnumber(0)
+	local brakeMigrationSection = "BRAKE_MIGRATION"
+	local brakeMigrationItem = ac.getScriptSetupValue(brakeMigrationSection) or refnumber(0)
+	local brakeMigrationRampSection = "BRAKE_MIGRATION_RAMP"
+	local brakeMigrationRampItem = ac.getScriptSetupValue(brakeMigrationRampSection) or refnumber(0)
+
+	local brakeMigrationLut = setupINI:get(setupIDToSectionKeyMap[brakeMigrationSection], "LUT", "")
+	local brakeMigrationLutValues = {}
+	if #brakeMigrationLut > 0 then
+		local lut = ac.readDataFile(
+			ac.getFolder(ac.FolderID.ContentCars) .. "/" .. ac.getCarID(car.index) .. "/data/" .. brakeMigrationLut
+		)
+		if lut and #lut > 0 then
+			brakeMigrationLutValues = table.map(
+				table.map(lut:split("\n"), function(x)
+					return x:split("|", 2, true)
+				end),
+				function(x)
+					if #x ~= 2 then
+						return
+					end
+					return x[2], tostring(x[2]) + 1
+				end
+			)
+		end
+	end
+
+	local brakeMigrationMin = tonumber(brakeMigrationLutValues[1])
+	local brakeMigrationMax = tonumber(brakeMigrationLutValues[#brakeMigrationLutValues])
+	local brakeMigrationStep = 1
+
+	return function()
+		local brakeBiasFine = brakeBiasFineItem()
+		local brakeBiasBase = car.brakeBias + brakeBiasFine / 1000
+		local brakeMigration = brakeMigrationItem()
+		local brakeMigrationRamp = brakeMigrationRampItem()
+		local brakePedal = data.brake
+		local brakeBiasTotal = brakeBiasBase
+			+ math.clamp((brakePedal - brakeMigrationRamp / 100), 0, 1)
+				/ (1 - brakeMigrationRamp / 100)
+				* brakeMigration
+				/ 100
+
+		setupItemStepper(
+			brakeMigrationSection,
+			brakeMigration,
+			brakeMigrationMin,
+			brakeMigrationMax,
+			brakeMigrationStep,
+			"extraB",
+			"extraA"
+		)
+
+		-- stylua: ignore start
+		ac.debug("ebb.base", tostring(math.round(brakeBiasBase * 100, 1)) .. "%")
+		ac.debug("ebb.fine", tostring(brakeBiasFine/10) .. "%")
+		ac.debug("ebb.total", tostring(math.round(brakeBiasTotal * 100, 1)) .. "%")
+		ac.debug("ebb.mig", tostring(brakeMigration) .. "%")
+		ac.debug("ebb.mig.ramp", tostring(brakeMigrationRamp) .. "%")
+		ac.debug("ebb.mig.applied", tostring(math.round(math.clamp((brakePedal - brakeMigrationRamp / 100), 0, 1) / (1 - brakeMigrationRamp / 100),3) * 100) .. "%")
+		ac.debug("ebb.brake.pedal", tostring(math.round(data.brake * 100, 1)) .. "%")
+		ac.debug("extraA", car.extraA)
+		ac.debug("extraB", car.extraB)
+		-- stylua: ignore end
+
+		ext_car.brakeBiasBase = brakeBiasBase
+		ext_car.brakeBiasFine = brakeBiasFine
+		ext_car.brakeMigration = brakeMigration
+		ext_car.brakeMigrationRamp = brakeMigrationRamp
+		data.controllerInputs[0] = brakeBiasTotal
+	end
+end
+
+local function isHispdSwitch(speed)
+	local groundSpeed = data.speedKmh
 	local longAccel = car.acceleration.z
 	local isHispd = false
-	if longAccel > 0 then
-		isHispd = true
-	elseif groundSpeed > 185 or groundSpeed < 1 then
+	if longAccel > 0 or groundSpeed > speed or groundSpeed < 1 then
 		isHispd = true
 	end
 	return isHispd
 end
 
-local function differential(data)
-	if entryDiff ~= connection.diffEntry then
-		entryDiff = connection.diffEntry
-	end
-	if midDiff ~= connection.diffMid then
-		midDiff = connection.diffMid
-	end
-	if hispdDiff ~= connection.diffHispd then
-		hispdDiff = connection.diffHispd
-	end
-
-	if lastExtraC ~= car.extraC then
-		if diffMode == DifferentialModes.HISPD then
-			diffMode = DifferentialModes.ENTRY
-		else
-			diffMode = diffMode + 1
-		end
-		lastExtraC = car.extraC
-	end
-
-	local diffValue = 1
-	local diffMinValue = 1
-	local diffMaxValue = 12
-
-	if diffMode == DifferentialModes.ENTRY then
-		diffValue = entryDiff
-	elseif diffMode == DifferentialModes.MID then
-		diffValue = midDiff
-	elseif diffMode == DifferentialModes.HISPD then
-		diffValue = hispdDiff
-	end
-
-	if lastExtraD ~= car.extraD then
-		diffValue = math.clamp(diffValue + 1, diffMinValue, diffMaxValue)
-		lastExtraD = car.extraD
-	end
-	if lastExtraE ~= car.extraE then
-		diffValue = math.clamp(diffValue - 1, diffMinValue, diffMaxValue)
-		lastExtraE = car.extraE
-	end
-
-	if diffMode == DifferentialModes.ENTRY then
-		entryDiff = diffValue
-	elseif diffMode == DifferentialModes.MID then
-		midDiff = diffValue
-	elseif diffMode == DifferentialModes.HISPD then
-		hispdDiff = diffValue
-	end
-
-	local differentialPower = hispdDiffSwitch(data) and hispdDiff or midDiff
-
-	-- ac.debug("_car.driver", ac.getDriverName(car.index))
-	-- ac.debug("_car.index", car.index)
-	-- ac.debug("script.diff.mode", diffMode)
-	-- ac.debug("script.diff.entry", entryDiff)
-	-- ac.debug("script.diff.mid", midDiff)
-	-- ac.debug("script.diff.hispd", hispdDiff)
-	-- ac.debug("script.diff.exit", exitDiff)
-	-- ac.debug("car.speed", data.speedKmh)
-	-- ac.debug("data.diff.coast", car.differentialCoast)
-	-- ac.debug("data.diff.power", car.differentialPower)
-	-- ac.debug("data.diff.preload", car.differentialPreload)
-	-- ac.debug("state.c", car.extraC)
-	-- ac.debug("state.d", car.extraD)
-	-- ac.debug("state.e", car.extraE)
-
-	connection.differentialMode = diffMode
-	connection.differentialEntry = entryDiff
-	connection.differentialMid = midDiff
-	connection.differentialExitHispd = hispdDiff
-
-	data.controllerInputs[2] = entryDiff
-	data.controllerInputs[3] = differentialPower
-end
-
-local function resetExtraStates()
-	extra.A = false
-	extra.B = false
-	extra.C = false
-	extra.D = false
-	extra.E = false
-end
-
-local EBB = function()
-	
-
-return function()
-
-
-end
-
 local DIFF = function()
+	local diffEntrySection = "DIFF_ENTRY"
+	local diffEntryItem = ac.getScriptSetupValue(diffEntrySection) or refnumber(0)
+	local diffMidSection = "DIFF_MID"
+	local diffMidItem = ac.getScriptSetupValue(diffMidSection) or refnumber(0)
+	local diffExitHispdSection = "DIFF_EXIT_HISPD"
+	local diffExitHispdItem = ac.getScriptSetupValue(diffExitHispdSection) or refnumber(0)
+	local diffMidHispdSwitchSection = "DIFF_MID_HISPD_SWITCH"
+	local diffMidHispdSwitchItem = ac.getScriptSetupValue(diffMidHispdSwitchSection) or refnumber(0)
 
-return function()
+	local diffLut = setupINI:get(setupIDToSectionKeyMap[diffEntrySection], "LUT", "")
+	local diffLutValues = {}
+	if #diffLut > 0 then
+		local lut = ac.readDataFile(
+			ac.getFolder(ac.FolderID.ContentCars) .. "/" .. ac.getCarID(car.index) .. "/data/" .. diffLut
+		)
+		if lut and #lut > 0 then
+			diffLutValues = table.map(
+				table.map(lut:split("\n"), function(x)
+					return x:split("|", 2, true)
+				end),
+				function(x)
+					if #x ~= 2 then
+						return
+					end
+					return x[2], tostring(x[2]) + 1
+				end
+			)
+		end
+	end
 
+	local diffMin = tonumber(diffLutValues[1])
+	local diffMax = tonumber(diffLutValues[#diffLutValues])
+	local diffStep = 1
 
+	return function()
+		local diffEntry = diffEntryItem()
+		local diffMid = diffMidItem()
+		local diffExitHispd = diffExitHispdItem()
+		local diffMidHispdSwitch = diffMidHispdSwitchItem()
+		local diffSection, diffValue
+
+		diffModeCurrent = setupItemStepper("DIFF_MODE", diffModeCurrent, 0, 2, 1, "", "extraC")
+
+		if diffModeCurrent == diffMode.ENTRY then
+			diffSection = diffEntrySection
+			diffValue = diffEntry
+		elseif diffModeCurrent == diffMode.MID then
+			diffSection = diffMidSection
+			diffValue = diffMid
+		elseif diffModeCurrent == diffMode.EXIT_HISPD then
+			diffSection = diffExitHispdSection
+			diffValue = diffExitHispd
+		end
+
+		setupItemStepper(diffSection, diffValue, diffMin, diffMax, diffStep, "extraE", "extraD")
+
+		local diffCoast = diffEntry
+		local diffPower = isHispdSwitch(diffMidHispdSwitch) and diffExitHispd or diffMid
+
+		ac.debug("car.driver", ac.getDriverName(car.index))
+		ac.debug("car.index", car.index)
+		ac.debug("car.accel.z", car.acceleration.z)
+		ac.debug("car.speed", math.round(data.speedKmh))
+		ac.debug("diff.mode", diffModeCurrent)
+		ac.debug("diff.entry", diffEntry)
+		ac.debug("diff.mid", diffMid)
+		ac.debug("diff.hispd", diffExitHispd)
+		ac.debug("diff.exit", diffPower)
+		ac.debug("diff.step.min", diffMin)
+		ac.debug("diff.step.max", diffMax)
+		ac.debug("diff.midHispdSwitch", diffMidHispdSwitch)
+		ac.debug("diff.midHispdSwitchActive", isHispdSwitch(diffMidHispdSwitch))
+		-- ac.debug("diff.data.coast", math.round(car.differentialCoast * 100, 1))
+		-- ac.debug("diff.data.power", math.round(car.differentialPower * 100, 1))
+		-- ac.debug("diff.data.preload", car.differentialPreload)
+		ac.debug("extraC", car.extraC)
+		ac.debug("extraD", car.extraD)
+		ac.debug("extraE", car.extraE)
+
+		ext_car.diffModeCurrent = diffModeCurrent
+		ext_car.diffEntry = diffEntry
+		ext_car.diffMid = diffMid
+		ext_car.diffExitHispd = diffExitHispd
+		ext_car.diffMidHispdSwitch = diffMidHispdSwitch
+		data.controllerInputs[1] = diffCoast
+		data.controllerInputs[2] = diffPower
+	end
 end
+
+local ebb = EBB()
+local diff = DIFF()
 
 function script.update(dt)
 	if sim.isInMainMenu then
 		resetExtraStates()
 	end
 
-	brakeMigration(data)
-	differential(data)
+	ebb()
+	diff()
 end
