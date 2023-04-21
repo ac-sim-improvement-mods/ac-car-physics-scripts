@@ -103,7 +103,13 @@ local function setupItemStepper(section, lut, value, min, max, step, stepDownExt
 		if section == "DIFF_MODE" then
 			ac.setSystemMessage("Differential Mode: " .. diffModeToString(value))
 		else
-			ac.setSystemMessage(tostring(sectionToMessage[section]) .. ": " .. lut[value + 1])
+			ac.setSystemMessage(
+				tostring(sectionToMessage[section])
+					.. ": "
+					.. lut:getPointInput(value)
+					.. "/"
+					.. lut:getPointInput(#lut - 1)
+			)
 		end
 	end
 
@@ -118,43 +124,19 @@ local EBB = function()
 	local brakeMigrationRampSection = "BRAKE_MIGRATION_RAMP"
 	local brakeMigrationRampItem = ac.getScriptSetupValue(brakeMigrationRampSection) or refnumber(0)
 
-	local brakeMigrationLut = setupINI:get(setupIDToSectionKeyMap[brakeMigrationSection], "LUT", "")
-	local brakeMigrationLutLabels = {}
-	local brakeMigrationLutValues = {}
+	local brakeMigrationLutFile = setupINI:get(setupIDToSectionKeyMap[brakeMigrationSection], "LUT", "")
+	local brakeMigrationLut = {}
 
-	-- Data lut mapping logic from Ilja
-	if #brakeMigrationLut > 0 then
-		local lut = ac.readDataFile(
-			ac.getFolder(ac.FolderID.ContentCars) .. "/" .. ac.getCarID(car.index) .. "/data/" .. brakeMigrationLut
-		)
-		if lut and #lut > 0 then
-			brakeMigrationLutLabels = table.map(
-				table.map(lut:split("\n"), function(x)
-					return x:split("|", 2, true)
-				end),
-				function(x)
-					if #x ~= 2 then
-						return
-					end
-					return x[1], tostring(x[2]) + 1
-				end
-			)
-			brakeMigrationLutValues = table.map(
-				table.map(lut:split("\n"), function(x)
-					return x:split("|", 2, true)
-				end),
-				function(x)
-					if #x ~= 2 then
-						return
-					end
-					return x[2], tostring(x[2]) + 1
-				end
-			)
-		end
+	if brakeMigrationLutFile then
+		brakeMigrationLut = ac.DataLUT11.carData(car.index, brakeMigrationLutFile)
+		ac.debug("ebb.lut.get.min", brakeMigrationLut:get(0))
+		ac.debug("ebb.lut.get.max", brakeMigrationLut:get(#brakeMigrationLut))
+		ac.debug("ebb.lut.get.max.input", brakeMigrationLut:getPointInput(brakeMigrationLut:get(#brakeMigrationLut)))
+		ac.debug("ebb.lut.get.min.input", brakeMigrationLut:getPointInput(brakeMigrationLut:get(0)))
 	end
 
-	local brakeMigrationMin = tonumber(brakeMigrationLutValues[1])
-	local brakeMigrationMax = tonumber(brakeMigrationLutValues[#brakeMigrationLutValues])
+	local brakeMigrationMin = brakeMigrationLut:get(0)
+	local brakeMigrationMax = brakeMigrationLut:get(#brakeMigrationLut)
 	local brakeMigrationStep = 1
 
 	return function()
@@ -171,7 +153,7 @@ local EBB = function()
 
 		setupItemStepper(
 			brakeMigrationSection,
-			brakeMigrationLutLabels,
+			brakeMigrationLut,
 			brakeMigration,
 			brakeMigrationMin,
 			brakeMigrationMax,
@@ -220,43 +202,19 @@ local DIFF = function()
 	local diffMidHispdSwitchSection = "DIFF_MID_HISPD_SWITCH"
 	local diffMidHispdSwitchItem = ac.getScriptSetupValue(diffMidHispdSwitchSection) or refnumber(0)
 
-	local diffLut = setupINI:get(setupIDToSectionKeyMap[diffEntrySection], "LUT", "")
-	local diffLutLables = {}
-	local diffLutValues = {}
+	local diffLutFile = setupINI:get(setupIDToSectionKeyMap[diffEntrySection], "LUT", "")
+	local diffLut = {}
 
-	-- Data lut mapping logic from Ilja
-	if #diffLut > 0 then
-		local lut = ac.readDataFile(
-			ac.getFolder(ac.FolderID.ContentCars) .. "/" .. ac.getCarID(car.index) .. "/data/" .. diffLut
-		)
-		if lut and #lut > 0 then
-			diffLutLables = table.map(
-				table.map(lut:split("\n"), function(x)
-					return x:split("|", 2, true)
-				end),
-				function(x)
-					if #x ~= 2 then
-						return
-					end
-					return x[1], tostring(x[2]) + 1
-				end
-			)
-			diffLutValues = table.map(
-				table.map(lut:split("\n"), function(x)
-					return x:split("|", 2, true)
-				end),
-				function(x)
-					if #x ~= 2 then
-						return
-					end
-					return x[2], tostring(x[2]) + 1
-				end
-			)
-		end
+	if diffLutFile then
+		diffLut = ac.DataLUT11.carData(car.index, diffLutFile)
+		ac.debug("diff.lut.get.min", diffLut:get(0))
+		ac.debug("diff.lut.get.max", diffLut:get(#diffLut - 1))
+		ac.debug("diff.lut.get.max.input", diffLut:getPointInput(diffLut:get(#diffLut)))
+		ac.debug("diff.lut.get.min.input", diffLut:getPointInput(diffLut:get(0)))
 	end
 
-	local diffMin = tonumber(diffLutValues[1])
-	local diffMax = tonumber(diffLutValues[#diffLutValues])
+	local diffMin = diffLut:get(0)
+	local diffMax = diffLut:get(#diffLut)
 	local diffStep = 1
 
 	return function()
@@ -279,7 +237,7 @@ local DIFF = function()
 			diffValue = diffExitHispd
 		end
 
-		setupItemStepper(diffSection, diffLutLables, diffValue, diffMin, diffMax, diffStep, "extraE", "extraD")
+		setupItemStepper(diffSection, diffLut, diffValue, diffMin, diffMax, diffStep, "extraE", "extraD")
 
 		local diffCoast = diffEntry
 		local diffPower = isHispdSwitch(diffMidHispdSwitch) and diffExitHispd or diffMid
