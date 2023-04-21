@@ -1,52 +1,59 @@
 # Formula 1 Car Physics
 ## Brake Migration
-You have your base brake bias that you are familiar with setting in AC, known as Brake Bias. With the introduction of brake migration, there is now a “total brake bias”. The total brake bias represented by the following equation.
+Brake migration is the shifting of brake bias rearwards as the driver releases the brake pedal. This shift allows the car to initally have a higher front brake bias percentage, which provides greater stopping power, then shifts the bias rearwards to prevent the front tyres from getting locked up.  
 
-##### TOTAL BRAKE BIAS
+The equation below represents the total brake bias. Total brake bias is calculated by adding the base brake bias to the product of the ratio of brake pedal percentage and ramp level multiplied by the brake migration percentage.
+
 ```math
 total = base + (pedal - ramp) / (1 - ramp) * bmig
 ``` 
 
-#### Example
-```math
-Setup 1:  
+#### Examples
+##### Example 1
+```ini
+Setup:  
 Base_Brake_Bias = 53.0%  
 BMig = 2%  
-Ramp = 40%  
+Ramp = 40%
 
-Scenario 1:
-Brake_Pedal = 60%
-Total_Brake_Bias = 54.0%
+Scenario 1:  
+Brake_Pedal = 60%  
+Total_Brake_Bias = 54.0%  
 
-Scenario 2:
-Brake_Pedal = 40%
-Total_Brake_Bias = 53.0%
-```
-```math
-Setup 2:
-Base_Brake_Bias = 54.0%
-BMig = 8%
-Ramp = 0% 
-
-Scenario 1:
-Brake_Pedal = 75%
-Total_Brake_Bias = 60.0%
-
-Scenario 2:
-Brake_Pedal = 50%
-Total_Brake_Bias = 58.0%
+Scenario 2:  
+Brake_Pedal = 40%  
+Total_Brake_Bias = 53.0%  
 ```
 
-BMig takes advantage of the high frontal downforce while at speed by increasing from the base brake bias. Since the front wheels have a lot of force pushing them into the track, the higher brake bias will result in increased stopping power. As the car slows down, the driver will begin to release the brake pedal. The brake bias will then, begin to shift rearwards, helping prevent the wheels locking due to the reduced frontal downforce. 
+##### Example 2
+```ini
+Setup:  
+Base_Brake_Bias = 54.0%  
+BMig = 8%  
+Ramp = 0%   
 
-## Differential
+Scenario 1:  
+Brake_Pedal = 75%  
+Total_Brake_Bias = 60.0%  
+
+Scenario 2:  
+Brake_Pedal = 50%  
+Total_Brake_Bias = 58.0%  
+```
+
+## Differential Settings
 Differential adjustment allows for the driver to change the differential lock percentage for the three phases of a corner. Entry, Middle, and Exit/Highspeed. High speed corners share the Exit differential setting. 
 
-Higher setting, means more differential locking. 
+Higher differential setting = more differential locking.  
 
-Setting 1 for Entry would give the most stability and least amount of rotation. and 12 would be the least stable, and the most rotation. 
+```ini
+Differential = 1/12
+This represents a completely open differential.
+Provides most stability and least acceleration/rotation.
+```
 
-Setting 1 would give you the most traction and least acceleration for MID and EXIT, while 12 would give the least traction and most acceleration. 
-
-Setting 1 = 0% locking (Open Diff)
-Setting 12 = 100% locking (Closed Diff)
+```ini
+Differential = 12/12
+This represents a completely closed differential.
+Provides least stability and most acceleration/rotation.
+```
