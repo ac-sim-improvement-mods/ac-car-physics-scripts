@@ -1,14 +1,14 @@
--- if car.isAIControlled then
--- 	return nil
--- end
+if car.isAIControlled then
+	return nil
+end
 
 local sim = ac.getSim()
 local data = ac.accessCarPhysics()
 local cdata = ac.getCarPhysics(car.index)
 
 local debug = {
-	car = true,
-	ebb = true,
+	car = false,
+	ebb = false,
 	diff = false,
 	antistall = false,
 	controls = false,
