@@ -1,0 +1,26 @@
+; If EXT_CONTROLS==1, refer to data_override/ext_controls.ini for bindings
+[EXTRA_SWITCHES]
+SWITCH_A = Increases BMIG setting
+SWITCH_A_FLAGS = HOLD_MODE
+SWITCH_B = Decreases BMIG setting
+SWITCH_B_FLAGS = HOLD_MODE
+SWITCH_C = Switch targeted DIFF mode
+SWITCH_C_FLAGS = HOLD_MODE
+SWITCH_D = Increases targeted DIFF setting
+SWITCH_D_FLAGS = HOLD_MODE
+SWITCH_E = Decreases targeted DIFF setting
+SWITCH_E_FLAGS = HOLD_MODE
+SWITCH_F = Switch display page
+SWITCH_F_FLAGS =
+
+[EXT_CONTROLS]
+ACTIVE = 1
+
+[SCRIPT_1]
+ACTIVE = $" read('csp/version', 0) >= 2144 "
+SCRIPT = "
+local extConfigINI = ac.INIConfig.load(ac.getFolder(ac.FolderID.ContentCars) .. '/' .. ac.getCarID(0) .. '/extension/ext_config.ini',ac.INIFormat.ExtendedIncludes)
+local extControlsINI = ac.INIConfig.load(ac.getFolder(ac.FolderID.ContentCars)..'/'..ac.getCarID(0)..'/extension/data_override/ext_controls.ini',ac.INIFormat.ExtendedIncludes)
+ac.store('ext_controls.enabled', extConfigINI:get('EXT_CONTROLS', 'ACTIVE', 0))
+ac.store('ext_controls', stringify(extControlsINI.sections))
+"
