@@ -1,14 +1,24 @@
+-- if car.isAIControlled then
+-- 	return nil
+-- end
+
 local sim = ac.getSim()
 local data = ac.accessCarPhysics()
-local debug = true
+local cdata = ac.getCarPhysics(car.index)
+
+local debug = {
+	car = true,
+	ebb = true,
+	diff = false,
+	antistall = false,
+	controls = false,
+}
 
 local ext_car = ac.connect({
 	ac.StructItem.key(ac.getCarID(car.index) .. "_ext_car_" .. car.index),
 	connected = ac.StructItem.boolean(),
-	brakeBiasBase = ac.StructItem.float(),
-	brakeBiasFine = ac.StructItem.float(),
+	brakeBiasTotal = ac.StructItem.float(),
 	brakeMigration = ac.StructItem.float(),
-	brakeMigrationRamp = ac.StructItem.float(),
 	brakeMagic = ac.StructItem.boolean(),
 	diffModeCurrent = ac.StructItem.float(),
 	diffEntry = ac.StructItem.float(),
@@ -41,6 +51,8 @@ local last = {
 	extraE = car.extraE,
 	BRAKE_MIGRATION_UP = false,
 	BRAKE_MIGRATION_DN = false,
+	BRAKE_BIAS_FINE_UP = false,
+	BRAKE_BIAS_FINE_DN = false,
 	BRAKE_MAGIC = false,
 	DIFF_MODE_UP = false,
 	DIFF_ENTRY_UP = false,
@@ -85,7 +97,7 @@ local sectionToMessage = {
 	DIFF_EXIT_HISPD = "Differential EXIT/HISPD",
 }
 
-local function setupItemStepper(section, lut, value, min, max, step, stepDownBinding, stepUpBinding)
+local function setupItemStepper(section, lut, value, min, max, step, stepDownBinding, stepUpBinding, skipMessage)
 	local updated = false
 	local sectionUp = section .. "_UP"
 	local sectionDn = section .. "_DN"
@@ -124,7 +136,9 @@ local function setupItemStepper(section, lut, value, min, max, step, stepDownBin
 	end
 
 	if updated then
-		if section == "DIFF_MODE" then
+		if skipMessage then
+			return value
+		elseif section == "DIFF_MODE" then
 			ac.setSystemMessage("Differential Mode: " .. diffModeToString(value))
 		else
 			ac.setSystemMessage(
@@ -142,23 +156,73 @@ end
 
 -- Check buttons pressed for each button configured in preset
 local function controlBindingListener(section)
-	local bindingJoy = extControlsBindings[section]["JOY"][1] or 0
-	local bindingButton = extControlsBindings[section]["BUTTON"][1] or 0
+	local bindingJoy = tonumber(extControlsBindings[section]["JOY"][1]) ~= nil
+			and tonumber(extControlsBindings[section]["JOY"][1])
+		or -1
+	local bindingButton = tonumber(extControlsBindings[section]["BUTTON"][1]) ~= nil
+			and tonumber(extControlsBindings[section]["BUTTON"][1])
+		or -1
 	local pressed = false
 
-	if type(bindingJoy) ~= "number" or type(bindingButton) ~= "number" then
-		return false
-	end
-
-	if ac.isJoystickButtonPressed(bindingJoy, tonumber(bindingButton) - 1) then
+	if ac.isJoystickButtonPressed(bindingJoy, bindingButton - 1) then
 		pressed = true
 	end
 
 	return pressed
 end
 
+local SMO = function()
+	local cancelSystemMessage = false
+	local lastIntervalID = -1
+	return function(section, msg, description, value, lastValue)
+		if lastValue ~= value then
+			lastValue = value
+			clearInterval(lastIntervalID)
+
+			lastIntervalID = setInterval(function()
+				ac.setSystemMessage(msg, description)
+			end, 0, section .. "_interval")
+
+			setTimeout(function()
+				cancelSystemMessage = true
+			end, 5, section .. "_timeout")
+		elseif cancelSystemMessage then
+			clearInterval(lastIntervalID)
+			cancelSystemMessage = false
+		end
+
+		return lastValue
+	end
+end
+
+local systemMessageOverride = SMO()
+
+local PTMAP = function()
+	local throttle = 0
+	local maxPwr = 0
+	local optRPM = car.rpmLimiter
+
+	return function()
+		data.gas = data.rpm > data.gas * optRPM and math.lerp(data.gas, 0, data.gas * optRPM) or data.gas
+
+		if car.drivetrainPower > maxPwr then
+			optRPM = data.rpm
+			maxPwr = car.drivetrainPower
+		end
+
+		throttle = data.gas < 0.99
+				and data.gas > 0.05
+				and math.clamp(math.exp((-(data.rpm / (optRPM * data.gas) - 1) ^ 2) * 3), 0, 1)
+			or data.gas
+
+		data.gas = throttle
+	end
+end
+
 local EBB = function()
 	local brakeBiasFineSection = "BRAKE_BIAS_FINE"
+	local brakeBiasFineUpSection = brakeBiasFineSection .. "_UP"
+	local brakeBiasFineDnSection = brakeBiasFineSection .. "_DN"
 	local brakeBiasFineItem = ac.getScriptSetupValue(brakeBiasFineSection) or refnumber(0)
 	local brakeMigrationSection = "BRAKE_MIGRATION"
 	local brakeMigrationUpSection = brakeMigrationSection .. "_UP"
@@ -169,35 +233,59 @@ local EBB = function()
 	local brakeMagicSection = "BRAKE_MAGIC"
 	local brakeMagicItem = ac.getScriptSetupValue(brakeMagicSection) or refnumber(0)
 
+	local brakeBiasFineLutFile = setupINI:get(setupIDToSectionKeyMap[brakeBiasFineSection], "LUT", "")
+	local brakeBiasFineLut = {}
+	if brakeBiasFineLutFile then
+		brakeBiasFineLut = ac.DataLUT11.carData(car.index, brakeBiasFineLutFile)
+	end
+	local brakeBiasFineMin = 0
+	local brakeBiasFineMax = 20
+	local brakeBiasFineStep = 1
+
 	local brakeMigrationLutFile = setupINI:get(setupIDToSectionKeyMap[brakeMigrationSection], "LUT", "")
 	local brakeMigrationLut = {}
-
 	if brakeMigrationLutFile then
 		brakeMigrationLut = ac.DataLUT11.carData(car.index, brakeMigrationLutFile)
 	end
-
 	local brakeMigrationMin = brakeMigrationLut:get(0)
 	local brakeMigrationMax = brakeMigrationLut:get(#brakeMigrationLut)
 	local brakeMigrationStep = 1
 
+	local brakeBiasCorrection = 0
+
+	local brakeBiasLast = car.brakeBias
+
 	return function()
 		local brakeBiasFine = brakeBiasFineItem()
-		local brakeBiasBase = car.brakeBias + brakeBiasFine / 1000
+		local brakeMigration = brakeMigrationItem()
+		local brakeBiasBase = car.brakeBias - brakeMigration / 100 + brakeBiasFine / 1000
+		local brakeBiasTotal = car.brakeBias + brakeBiasFine / 1000
 		local brakeMigration = brakeMigrationItem()
 		local brakeMigrationRamp = brakeMigrationRampItem()
 		local brakeMagic = brakeMagicItem()
 		local brakePedal = data.brake
-		local brakeBiasTotal = brakeBiasBase
+		local brakeBiasLive = brakeBiasBase
 			+ math.clamp((brakePedal - brakeMigrationRamp / 100), 0, 1)
 				/ (1 - brakeMigrationRamp / 100)
 				* brakeMigration
 				/ 100
 
-		local brakeMigrationUp, brakeMigrationDn, brakeMagicOn = car.extraA, car.extraB, false
+		local brakeMigrationUp, brakeMigrationDn, brakeBiasFineUp, brakeBiasFineDn, brakeMagicOn =
+			car.extraA, car.extraB, false, false, false
+
+		brakeBiasLast = systemMessageOverride(
+			"FRONT_BIAS",
+			"Brake Bias",
+			string.format("%.1f %%", brakeBiasTotal * 100),
+			brakeBiasTotal,
+			brakeBiasLast
+		)
 
 		if isExtControls then
 			brakeMigrationUp = controlBindingListener(brakeMigrationUpSection)
 			brakeMigrationDn = controlBindingListener(brakeMigrationDnSection)
+			brakeBiasFineUp = controlBindingListener(brakeBiasFineUpSection)
+			brakeBiasFineDn = controlBindingListener(brakeBiasFineDnSection)
 			brakeMagicOn = controlBindingListener(brakeMagicSection)
 		end
 
@@ -212,30 +300,57 @@ local EBB = function()
 			brakeMigrationUp
 		)
 
-		if debug then
+		setupItemStepper(
+			brakeBiasFineSection,
+			brakeBiasFineLut,
+			brakeBiasFine + 10,
+			brakeBiasFineMin,
+			brakeBiasFineMax,
+			brakeBiasFineStep,
+			brakeBiasFineDn,
+			brakeBiasFineUp,
+			true
+		)
+
+		if debug.ebb then
+			local brakeTorqueFront = cdata.wheels[0].brakeTorque + cdata.wheels[1].brakeTorque
+			local brakeTorqueRear = cdata.wheels[2].brakeTorque + cdata.wheels[3].brakeTorque
+			local brakeTorqueTotal = brakeTorqueFront + brakeTorqueRear
+			local brakeTorqueBalance = brakeTorqueFront / brakeTorqueTotal
+			local brakeTorqueDelta = brakeTorqueBalance - brakeBiasLive
+
 			-- stylua: ignore start
-			ac.debug("ebb.lut.get.min", brakeMigrationLut:get(0))
-			ac.debug("ebb.lut.get.max", brakeMigrationLut:get(#brakeMigrationLut))
-			ac.debug("ebb.lut.get.max.input", brakeMigrationLut:getPointInput(brakeMigrationLut:get(#brakeMigrationLut)))
-			ac.debug("ebb.lut.get.min.input", brakeMigrationLut:getPointInput(brakeMigrationLut:get(0)))
-			ac.debug("ebb.base", tostring(math.round(brakeBiasBase * 100, 1)) .. "%")
+			ac.debug("ebb.mig.lut.get.min", brakeMigrationLut:get(0))
+			ac.debug("ebb.mig.lut.get.max", brakeMigrationLut:get(#brakeMigrationLut))
+			ac.debug("ebb.mig.lut.get.max.input", brakeMigrationLut:getPointInput(brakeMigrationLut:get(#brakeMigrationLut)))
+			ac.debug("ebb.mig.lut.get.min.input", brakeMigrationLut:getPointInput(brakeMigrationLut:get(0)))
+			ac.debug("ebb.bias.total", tostring(math.round(brakeBiasTotal * 100, 1)) .. "%")
+			ac.debug("ebb.bias.live", tostring(math.round(brakeBiasLive * 100, 1)) .. "%")
+			ac.debug("ebb.bias.base", tostring(math.round(brakeBiasBase * 100, 1)) .. "%")
+
 			ac.debug("ebb.fine", tostring(brakeBiasFine/10) .. "%")
-			ac.debug("ebb.total", tostring(math.round(brakeBiasTotal * 100, 1)) .. "%")
+			ac.debug("ebb.fine.lut.get.min",brakeBiasFineLut:get(0))
+			ac.debug("ebb.fine.lut.get.max",  brakeBiasFineLut:get(#brakeBiasFineLut))
+			ac.debug("ebb.fine.lut.get.max.input",  brakeBiasFineLut:getPointInput(brakeBiasFineLut:get(#brakeBiasFineLut)))
+			ac.debug("ebb.fine.lut.get.min.input", brakeBiasFineLut:getPointInput(brakeBiasFineLut:get(0)))
 			ac.debug("ebb.mig", tostring(brakeMigration) .. "%")
 			ac.debug("ebb.mig.ramp", tostring(brakeMigrationRamp) .. "%")
 			ac.debug("ebb.mig.applied", tostring(math.round(math.clamp((brakePedal - brakeMigrationRamp / 100), 0, 1) / (1 - brakeMigrationRamp / 100),3) * 100) .. "%")
 			ac.debug("ebb.brake.pedal", tostring(math.round(data.brake * 100, 1)) .. "%")
+			ac.debug("ebb.trq.front", brakeTorqueFront)
+			ac.debug("ebb.trq.rear", brakeTorqueRear)
+			ac.debug("ebb.trq.total", brakeTorqueTotal)
+			ac.debug("ebb.bias.calculated", brakeTorqueBalance * 100)
+			ac.debug("ebb.bias.calc-live.delta", brakeTorqueDelta * 100)
 			ac.debug("extraA", car.extraA)
 			ac.debug("extraB", car.extraB)
 			-- stylua: ignore end
 		end
 
-		ext_car.brakeBiasBase = brakeBiasBase
-		ext_car.brakeBiasFine = brakeBiasFine
+		ext_car.brakeBiasTotal = brakeBiasTotal
 		ext_car.brakeMigration = brakeMigration
-		ext_car.brakeMigrationRamp = brakeMigrationRamp
 		ext_car.brakeMagic = brakeMagicOn
-		data.controllerInputs[0] = brakeMagicOn and brakeMagic or brakeBiasTotal
+		data.controllerInputs[0] = brakeMagicOn and brakeMagic or brakeBiasLive
 	end
 end
 
@@ -325,15 +440,11 @@ local DIFF = function()
 		local diffCoast = diffEntry
 		local diffPower = isHispdSwitch(diffMidHispdSwitch) and diffExitHispd or diffMid
 
-		if debug then
+		if debug.diff then
 			ac.debug("diff.lut.get.min", diffLut:get(0))
 			ac.debug("diff.lut.get.max", diffLut:get(#diffLut - 1))
 			ac.debug("diff.lut.get.max.input", diffLut:getPointInput(diffLut:get(#diffLut)))
 			ac.debug("diff.lut.get.min.input", diffLut:getPointInput(diffLut:get(0)))
-			ac.debug("car.driver", ac.getDriverName(car.index))
-			ac.debug("car.index", car.index)
-			ac.debug("car.accel.z", car.acceleration.z)
-			ac.debug("car.speed", math.round(data.speedKmh, 2))
 			ac.debug("diff.mode", diffModeCurrent)
 			ac.debug("diff.entry", diffEntry)
 			ac.debug("diff.mid", diffMid)
@@ -363,17 +474,13 @@ local DIFF = function()
 	end
 end
 
-local PTMAP = function()
-	return function() end
-end
-
 local STALL = function()
 	local antistallTimer = 0
 	local isAntistallActive = false
 	local isCarStalled = false
 	local engineINI = ac.INIConfig.carData(car.index, "engine.ini")
 	local rpmMinimum = engineINI:get("ENGINE_DATA", "MINIMUM", 0)
-	ac.setEngineStalling(true)
+	ac.setEngineStalling(false)
 
 	return function()
 		if data.gear ~= 1 then
@@ -407,9 +514,8 @@ local STALL = function()
 			data.gas = 0
 		end
 
-		if debug then
+		if debug.antistall then
 			ac.debug("data.clutch", data.clutch)
-			ac.debug("car.rpm", data.rpm)
 			ac.debug("antistall.active", isAntistallActive)
 			ac.debug("antistall.car.stalled", isCarStalled)
 			ac.debug("antistall.rpmMin", rpmMinimum)
@@ -424,13 +530,13 @@ end
 extControlsBindings = stringify.parse(ac.load("ext_controls"))
 isExtControls = ac.load("ext_controls.enabled") == 1 and true or false
 
-if debug then
-	ac.debug("controls.isExtControls", isExtControls == 1 and true or false)
+if debug.controls then
+	ac.debug("controls.isExtControls", isExtControls)
 end
 
+local ptmap = PTMAP()
 local ebb = EBB()
 local diff = DIFF()
-local ptmap = PTMAP()
 local stall = STALL()
 
 function script.update(dt)
@@ -438,8 +544,18 @@ function script.update(dt)
 		resetExtraStates()
 	end
 
+	if debug.car then
+		ac.debug("car.track.position", ac.worldCoordinateToTrackProgress(car.position))
+		ac.debug("car.rpm", math.floor(data.rpm))
+		ac.debug("car.driver", ac.getDriverName(car.index))
+		ac.debug("car.index", car.index)
+		ac.debug("car.accel.z", car.acceleration.z)
+		ac.debug("car.speed", math.round(data.speedKmh, 2))
+	end
+
 	ebb()
 	diff()
-	ptmap()
-	stall()
+
+	--ptmap()
+	--stall()
 end
